@@ -214,7 +214,7 @@ function RegisterView({ teams, onSaved }) {
         <Field label="Nombre" icon={User} value={form.first_name} onChange={v => setForm({ ...form, first_name: v })} error={errors.first_name} placeholder="Tu nombre" />
         <Field label="Apellido" icon={User} value={form.last_name} onChange={v => setForm({ ...form, last_name: v })} error={errors.last_name} placeholder="Tu apellido" />
         <Field label="Teléfono" icon={Phone} type="tel" value={form.phone} onChange={v => setForm({ ...form, phone: v })} error={errors.phone} placeholder="10 dígitos" />
-        <Field label="Referencia de venta" icon={ShoppingBag} value={form.sale_reference} onChange={v => setForm({ ...form, sale_reference: v })} error={errors.sale_reference} placeholder="Ej. anteojos completos, solares..." />
+        <Field label="Referencia de venta" icon={ShoppingBag} value={form.sale_reference} onChange={v => setForm({ ...form, sale_reference: v })} error={errors.sale_reference} placeholder="Ej. 8-0045987" />
         <Field label="Nombre de quien te refirió" icon={User} value={form.referrer_name} onChange={v => setForm({ ...form, referrer_name: v })} error={errors.referrer_name} placeholder="Nombre del colaborador" />
 
         <div>
@@ -345,7 +345,7 @@ function PodiumCard({ team, place, height, color, textColor, big }) {
   return (
     <div className="text-center">
       <div className={`${big ? 'text-base' : 'text-sm'} font-bold text-stone-900 mb-1 truncate px-1`} title={team.name}>{team.name}</div>
-      <div className="text-xs text-stone-500 mb-2">{team.totalReferrals} referidos</div>
+      <div className="text-xs text-stone-500 mb-2">{team.confirmed} referido{team.confirmed !== 1 ? 's' : ''}</div>
       <div className={`${height} ${color} border-t-2 border-x-2 rounded-t-xl flex flex-col items-center justify-center`}>
         <div className={big ? 'text-4xl mb-1' : 'text-2xl mb-1'}>{medal}</div>
         <div className={`${textColor} text-xs font-bold uppercase tracking-wider`}>{place}º</div>
@@ -369,9 +369,9 @@ function TeamRow({ team, place }) {
         {team.members && <p className="text-xs text-stone-500 truncate">{team.members}</p>}
       </div>
       <div className="text-right flex-shrink-0">
-        <div className="text-xl font-bold text-stone-900 leading-none">{team.totalReferrals}</div>
+        <div className="text-xl font-bold text-stone-900 leading-none">{team.confirmed}</div>
         <div className="text-xs text-stone-500 mt-0.5">
-          <span className="text-green-600 font-medium">{team.confirmed}</span> confirmadas
+          referidos{team.totalAmount > 0 && <span className="text-green-600 font-medium ml-1">· ${team.totalAmount.toLocaleString('es-MX')}</span>}
         </div>
       </div>
     </div>
@@ -396,12 +396,16 @@ function computeStats(teams, referrals) {
   for (const r of referrals) {
     const t = byTeam[r.team_id];
     if (!t) continue;
-    if (r.status === 'cancelled') { t.cancelled++; continue; }
-    t.totalReferrals++;
+    // Solo las ventas CONFIRMADAS cuentan para el ranking
     if (r.status === 'confirmed') {
+      t.totalReferrals++;
       t.confirmed++;
       t.totalAmount += parseFloat(r.sale_amount) || 0;
-    } else { t.pending++; }
+    } else if (r.status === 'cancelled') {
+      t.cancelled++;
+    } else {
+      t.pending++;
+    }
   }
   return Object.values(byTeam).sort((a, b) => {
     if (b.totalReferrals !== a.totalReferrals) return b.totalReferrals - a.totalReferrals;
@@ -609,6 +613,13 @@ function ReferralsAdmin({ teams, referrals, onChange }) {
     onChange();
   };
 
+  const deleteReferral = async (id, name) => {
+    if (!window.confirm(`¿Eliminar PERMANENTEMENTE el registro de ${name}?\n\nEsta acción no se puede deshacer. El registro se borrará de la base de datos.`)) return;
+    const { error } = await supabase.from('referrals').delete().eq('id', id);
+    if (error) { alert('Error al eliminar: ' + error.message); return; }
+    onChange();
+  };
+
   const promptConfirm = (id) => {
     const amount = window.prompt('Monto total de la venta (MXN):', '0');
     if (amount === null) return;
@@ -690,6 +701,9 @@ function ReferralsAdmin({ teams, referrals, onChange }) {
                       <RefreshCw className="w-3 h-3" /> Marcar pendiente
                     </button>
                   )}
+                  <button onClick={() => deleteReferral(r.id, `${r.first_name} ${r.last_name}`)} className="text-xs font-medium bg-stone-100 hover:bg-red-100 hover:text-red-700 text-stone-600 px-3 py-1.5 rounded-lg flex items-center gap-1 ml-auto">
+                    <Trash2 className="w-3 h-3" /> Eliminar
+                  </button>
                 </div>
               </div>
             );
